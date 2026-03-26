@@ -258,7 +258,7 @@ echo    pull.bat / pull.sh         - Pull code + CLI sessions
 echo    rollback.bat / rollback.sh - Rollback to previous version
 echo    claude-launch.bat          - Interactive launcher TUI
 echo.
-:: Only offer session pull if sessions haven't been pulled yet
+:: Check if sessions need pulling
 set "CLAUDE_DIR_NP=!CLAUDE_DIR!"
 if not defined CLAUDE_DIR_NP set "CLAUDE_DIR_NP=%USERPROFILE%\.claude"
 set "CDIR_FILE=%~dp0.claude-dir"
@@ -267,10 +267,41 @@ if exist "!CDIR_FILE!" (
 )
 
 if exist "!CLAUDE_DIR_NP!\.git" (
-    echo.
-    echo  [OK] Sessions already synced (run pull-all-sessions to update^).
+    :: Repo exists — check if behind remote
+    pushd "!CLAUDE_DIR_NP!" >nul
+    git fetch origin main >nul 2>&1
+    set "SESS_BEHIND=0"
+    for /f %%n in ('git rev-list --count HEAD..origin/main 2^>nul') do set "SESS_BEHIND=%%n"
+    popd >nul
+    if "!SESS_BEHIND!"=="0" (
+        echo.
+        echo  [OK] Sessions already up to date.
+    ) else (
+        echo.
+        echo  [INFO] !SESS_BEHIND! new session sync(s^) available from another machine.
+        set /p PULL_SESS="  Pull latest sessions? (Y/N): "
+        if /i "!PULL_SESS!"=="Y" (
+            echo.
+            set "SYNC_PY=%~dp0sync-sessions.py"
+            if exist "!SYNC_PY!" (
+                set "PY_S="
+                for /f "tokens=*" %%P in ('where py 2^>nul') do if not defined PY_S set "PY_S=%%P"
+                if not defined PY_S for /f "tokens=*" %%P in ('where python 2^>nul') do if not defined PY_S set "PY_S=%%P"
+                if defined PY_S (
+                    set "CC_ROOT=%~dp0.."
+                    set "RSLUG=!REPO_URL!"
+                    set "RSLUG=!RSLUG:https://github.com/=!"
+                    "!PY_S!" "!SYNC_PY!" pull "!CC_ROOT!" --project "!RSLUG!"
+                ) else (
+                    echo  [SKIP] Python not found.
+                )
+            ) else (
+                echo  [SKIP] sync-sessions.py not found.
+            )
+        )
+    )
 ) else (
-    echo.
+    :: No repo — first time setup
     echo.
     set /p PULL_SESS="  Pull sessions for this project from another machine? (Y/N): "
     if /i "!PULL_SESS!"=="Y" (
