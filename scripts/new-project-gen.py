@@ -14,6 +14,7 @@ os.makedirs(scripts_dir, exist_ok=True)
 # Extract org/repo slug for per-project session sync
 _clean_url = repo_url.rstrip('/').removesuffix('.git')
 remote_slug = _clean_url.replace("https://github.com/", "").lower()
+project_name = os.path.basename(_clean_url)
 
 # ══════════════════════════════════════════════════════════
 #  push.bat
@@ -63,6 +64,41 @@ if not exist "%~dp0.." (
     exit /b 1
 )
 cd /d "%~dp0.."
+
+:: ── Verify project folder ──
+set "EXPECTED_FOLDER={project_name}"
+for %%I in ("!CD!") do set "ACTUAL_FOLDER=%%~nxI"
+if /i not "!ACTUAL_FOLDER!"=="!EXPECTED_FOLDER!" (
+    color 0E
+    echo  [WARNING] Folder name mismatch
+    echo    Expected: !EXPECTED_FOLDER!
+    echo    Actual:   !ACTUAL_FOLDER!
+    echo.
+    set "REMOTE_MATCH=0"
+    if exist ".git" (
+        for /f "tokens=*" %%r in ('git remote get-url origin 2^>nul') do (
+            set "CHECK_REMOTE=%%r"
+            if /i "!CHECK_REMOTE!"=="{repo}.git" set "REMOTE_MATCH=1"
+            if /i "!CHECK_REMOTE!"=="{repo}" set "REMOTE_MATCH=1"
+        )
+    )
+    if "!REMOTE_MATCH!"=="1" (
+        echo  Git remote matches — correct project, folder was renamed.
+        echo  Continuing...
+        echo.
+    ) else (
+        color 0C
+        echo  [ERROR] This script was generated for: {repo}
+        echo  But this folder does not appear to be that project.
+        echo.
+        echo  To fix:
+        echo    - Rename this folder to "!EXPECTED_FOLDER!"
+        echo    - Or re-run new-project to generate correct scripts
+        echo.
+        pause
+        exit /b 1
+    )
+)
 
 set "REPO_URL={repo}"
 
@@ -260,6 +296,41 @@ if not exist "%~dp0.." (
 )
 cd /d "%~dp0.."
 
+:: ── Verify project folder ──
+set "EXPECTED_FOLDER={project_name}"
+for %%I in ("!CD!") do set "ACTUAL_FOLDER=%%~nxI"
+if /i not "!ACTUAL_FOLDER!"=="!EXPECTED_FOLDER!" (
+    color 0E
+    echo  [WARNING] Folder name mismatch
+    echo    Expected: !EXPECTED_FOLDER!
+    echo    Actual:   !ACTUAL_FOLDER!
+    echo.
+    set "REMOTE_MATCH=0"
+    if exist ".git" (
+        for /f "tokens=*" %%r in ('git remote get-url origin 2^>nul') do (
+            set "CHECK_REMOTE=%%r"
+            if /i "!CHECK_REMOTE!"=="{repo}.git" set "REMOTE_MATCH=1"
+            if /i "!CHECK_REMOTE!"=="{repo}" set "REMOTE_MATCH=1"
+        )
+    )
+    if "!REMOTE_MATCH!"=="1" (
+        echo  Git remote matches — correct project, folder was renamed.
+        echo  Continuing...
+        echo.
+    ) else (
+        color 0C
+        echo  [ERROR] This script was generated for: {repo}
+        echo  But this folder does not appear to be that project.
+        echo.
+        echo  To fix:
+        echo    - Rename this folder to "!EXPECTED_FOLDER!"
+        echo    - Or re-run new-project to generate correct scripts
+        echo.
+        pause
+        exit /b 1
+    )
+)
+
 if not exist ".git" (
     color 0C
     echo  [ERROR] No git repo found. Run push.bat first.
@@ -391,6 +462,41 @@ if errorlevel 1 (
 )
 
 cd /d "%~dp0.."
+
+:: ── Verify project folder ──
+set "EXPECTED_FOLDER={project_name}"
+for %%I in ("!CD!") do set "ACTUAL_FOLDER=%%~nxI"
+if /i not "!ACTUAL_FOLDER!"=="!EXPECTED_FOLDER!" (
+    color 0E
+    echo  [WARNING] Folder name mismatch
+    echo    Expected: !EXPECTED_FOLDER!
+    echo    Actual:   !ACTUAL_FOLDER!
+    echo.
+    set "REMOTE_MATCH=0"
+    if exist ".git" (
+        for /f "tokens=*" %%r in ('git remote get-url origin 2^>nul') do (
+            set "CHECK_REMOTE=%%r"
+            if /i "!CHECK_REMOTE!"=="{repo}.git" set "REMOTE_MATCH=1"
+            if /i "!CHECK_REMOTE!"=="{repo}" set "REMOTE_MATCH=1"
+        )
+    )
+    if "!REMOTE_MATCH!"=="1" (
+        echo  Git remote matches — correct project, folder was renamed.
+        echo  Continuing...
+        echo.
+    ) else (
+        color 0C
+        echo  [ERROR] This script was generated for: {repo}
+        echo  But this folder does not appear to be that project.
+        echo.
+        echo  To fix:
+        echo    - Rename this folder to "!EXPECTED_FOLDER!"
+        echo    - Or re-run new-project to generate correct scripts
+        echo.
+        pause
+        exit /b 1
+    )
+)
 
 :: ── Check remote status ──
 git fetch origin main --tags >nul 2>&1
@@ -572,6 +678,31 @@ if [ -z "$PROJ_DIR" ] || [ ! -d "$PROJ_DIR" ]; then
 fi
 cd "$PROJ_DIR"
 
+# ── Verify project folder ──
+EXPECTED_FOLDER="{project_name}"
+ACTUAL_FOLDER="$(basename "$PROJ_DIR")"
+if [ "$ACTUAL_FOLDER" != "$EXPECTED_FOLDER" ]; then
+    echo -e "${{YELLOW}}  [WARNING] Folder name mismatch${{NC}}"
+    echo "    Expected: $EXPECTED_FOLDER"
+    echo "    Actual:   $ACTUAL_FOLDER"
+    echo ""
+    ACTUAL_REMOTE=$(git remote get-url origin 2>/dev/null)
+    if [ "$ACTUAL_REMOTE" = "{repo}.git" ] || [ "$ACTUAL_REMOTE" = "{repo}" ]; then
+        echo "  Git remote matches — correct project, folder was renamed."
+        echo "  Continuing..."
+        echo ""
+    else
+        echo -e "${{RED}}  [ERROR] This script was generated for: {repo}${{NC}}"
+        echo "  But this folder does not appear to be that project."
+        echo ""
+        echo "  To fix:"
+        echo "    - Rename this folder to \"$EXPECTED_FOLDER\""
+        echo "    - Or re-run new-project to generate correct scripts"
+        read -p "  Press Enter to close..." _
+        exit 1
+    fi
+fi
+
 if [ ! -d ".git" ]; then
     echo -e "${{YELLOW}}  [SETUP] No git repo found. Initializing...${{NC}}"
     git init
@@ -742,6 +873,32 @@ if [ -z "$PROJ_DIR" ] || [ ! -d "$PROJ_DIR" ]; then
     exit 1
 fi
 cd "$PROJ_DIR"
+
+# ── Verify project folder ──
+EXPECTED_FOLDER="{project_name}"
+ACTUAL_FOLDER="$(basename "$PROJ_DIR")"
+if [ "$ACTUAL_FOLDER" != "$EXPECTED_FOLDER" ]; then
+    echo -e "${{YELLOW}}  [WARNING] Folder name mismatch${{NC}}"
+    echo "    Expected: $EXPECTED_FOLDER"
+    echo "    Actual:   $ACTUAL_FOLDER"
+    echo ""
+    ACTUAL_REMOTE=$(git remote get-url origin 2>/dev/null)
+    if [ "$ACTUAL_REMOTE" = "{repo}.git" ] || [ "$ACTUAL_REMOTE" = "{repo}" ]; then
+        echo "  Git remote matches — correct project, folder was renamed."
+        echo "  Continuing..."
+        echo ""
+    else
+        echo -e "${{RED}}  [ERROR] This script was generated for: {repo}${{NC}}"
+        echo "  But this folder does not appear to be that project."
+        echo ""
+        echo "  To fix:"
+        echo "    - Rename this folder to \"$EXPECTED_FOLDER\""
+        echo "    - Or re-run new-project to generate correct scripts"
+        read -p "  Press Enter to close..." _
+        exit 1
+    fi
+fi
+
 if [ ! -d ".git" ]; then echo -e "${{RED}}  [ERROR] No git repo found. Run push.sh first.${{NC}}"; read -p "  Press Enter to close..." _; exit 1; fi
 
 # ── Pull project code ──
@@ -845,6 +1002,31 @@ echo ""
 if ! command -v git &>/dev/null; then echo -e "${{RED}}  [ERROR] git not installed.${{NC}}"; read -p "  Press Enter to close..." _; exit 1; fi
 cd "$(dirname "$0")/.."
 
+# ── Verify project folder ──
+EXPECTED_FOLDER="{project_name}"
+ACTUAL_FOLDER="$(basename "$(pwd)")"
+if [ "$ACTUAL_FOLDER" != "$EXPECTED_FOLDER" ]; then
+    echo -e "${{YELLOW}}  [WARNING] Folder name mismatch${{NC}}"
+    echo "    Expected: $EXPECTED_FOLDER"
+    echo "    Actual:   $ACTUAL_FOLDER"
+    echo ""
+    ACTUAL_REMOTE=$(git remote get-url origin 2>/dev/null)
+    if [ "$ACTUAL_REMOTE" = "{repo}.git" ] || [ "$ACTUAL_REMOTE" = "{repo}" ]; then
+        echo "  Git remote matches — correct project, folder was renamed."
+        echo "  Continuing..."
+        echo ""
+    else
+        echo -e "${{RED}}  [ERROR] This script was generated for: {repo}${{NC}}"
+        echo "  But this folder does not appear to be that project."
+        echo ""
+        echo "  To fix:"
+        echo "    - Rename this folder to \"$EXPECTED_FOLDER\""
+        echo "    - Or re-run new-project to generate correct scripts"
+        read -p "  Press Enter to close..." _
+        exit 1
+    fi
+fi
+
 # ── Project code status ──
 git fetch origin main --tags >/dev/null 2>&1
 AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo 0)
@@ -917,12 +1099,12 @@ read -p "  Press Enter to close..." _
 #  Write all files
 # ══════════════════════════════════════════════════════════
 files = {
-    'push.bat': push_bat.format(display=display_name, repo=repo_url, remote_slug=remote_slug),
-    'pull.bat': pull_bat.format(display=display_name, repo=repo_url, remote_slug=remote_slug),
-    'rollback.bat': rollback_bat.format(display=display_name, repo=repo_url),
-    'push.sh': push_sh.format(display=display_name, repo=repo_url, remote_slug=remote_slug),
-    'pull.sh': pull_sh.format(display=display_name, repo=repo_url, remote_slug=remote_slug),
-    'rollback.sh': rollback_sh.format(display=display_name, repo=repo_url),
+    'push.bat': push_bat.format(display=display_name, repo=repo_url, remote_slug=remote_slug, project_name=project_name),
+    'pull.bat': pull_bat.format(display=display_name, repo=repo_url, remote_slug=remote_slug, project_name=project_name),
+    'rollback.bat': rollback_bat.format(display=display_name, repo=repo_url, project_name=project_name),
+    'push.sh': push_sh.format(display=display_name, repo=repo_url, remote_slug=remote_slug, project_name=project_name),
+    'pull.sh': pull_sh.format(display=display_name, repo=repo_url, remote_slug=remote_slug, project_name=project_name),
+    'rollback.sh': rollback_sh.format(display=display_name, repo=repo_url, project_name=project_name),
 }
 
 for filename, content in files.items():
