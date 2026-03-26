@@ -520,6 +520,7 @@ The core engine (~1500 lines of Python) handles everything:
 ### new-project-gen.py
 
 Generates per-project push/pull/rollback scripts from templates. This is the **single source of truth** for per-project scripts. Each generated script:
+- **Validates project folder** at startup — compares folder name vs expected, checks git remote if mismatch, stops if wrong project
 - Shows PROJECT CODE STATUS (local vs remote, ahead/behind)
 - Shows SESSION SYNC STATUS (via sync-sessions.py)
 - Warns before destructive operations
@@ -642,7 +643,7 @@ Each machine's `.gitignore` is independent. Changes you make to `.gitignore` on 
 - **Force push confirmation**: Root push asks "Overwrite remote?" when remote has newer data.
 - **Per-project isolation**: Push only commits that project's sessions. Pull fetches everything but auto-resolves conflicts outside the project scope by keeping local — other projects, settings, and plugins are never overwritten. The full migration pipeline still runs on all projects to fix paths and timestamps.
 - **Claude directory detection**: Auto-finds `~/.claude/`, prompts if not found, lets you enter a custom path.
-- **Project directory validation**: Every operation checks folders exist. Clear errors with fix instructions.
+- **Project folder validation**: Every per-project script verifies the parent folder name matches the expected project name. If the folder was renamed, it checks the git remote as source of truth — if the remote matches, it warns but proceeds; if the remote doesn't match, it stops with clear fix instructions (rename the folder or re-run `new-project`).
 - **Workspace structure check**: Warns if project isn't inside the workspace.
 - **Branch safety**: Detects `master` branch and informs instead of force-renaming.
 
