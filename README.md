@@ -1,5 +1,7 @@
 # Claude Sync — Cross-Platform Session Sync for Claude Code
 
+Created by **Coskun Eren** at **[PITIR TECH](https://github.com/PITIR-TECH)**
+
 Sync your Claude Code sessions, memory, plugins, agents, skills, rules, hooks, commands, MCP configs, and project settings across Mac and Windows. Switch PCs and pick up exactly where you left off.
 
 ---
@@ -657,4 +659,6 @@ Each machine's `.gitignore` is independent. Changes you make to `.gitignore` on 
 
 ## License
 
-MIT
+MIT License - Copyright (c) 2026 Coskun Eren / PITIR TECH
+
+This software is free to use, modify, and distribute under the MIT License. The copyright notice and permission notice must be included in all copies or substantial portions of the software. See [LICENSE](LICENSE) for full terms.
