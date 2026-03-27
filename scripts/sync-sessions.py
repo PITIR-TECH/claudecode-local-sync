@@ -221,11 +221,16 @@ def trim_oversized(claude_dir, project_filter=None):
             mb = fsize / (1024 * 1024)
             print(f"  [TRIM] {rel} ({mb:.0f} MB -> {THRESHOLD_MB} MB)")
             try:
+                shutil.copy2(fpath, backup)
                 with open(fpath, "rb") as f:
                     f.seek(fsize - THRESHOLD_BYTES)
                     f.readline()
                     data = f.read()
-                shutil.copy2(fpath, backup)
+                if not data or len(data) < 100:
+                    # Safety: don't overwrite with empty/tiny content
+                    print(f"  [ERROR] {rel}: trimmed data too small ({len(data)} bytes), skipping")
+                    os.remove(backup)
+                    continue
                 with open(fpath, "wb") as f:
                     f.write(data)
                 trimmed += 1
@@ -240,13 +245,52 @@ def trim_oversized(claude_dir, project_filter=None):
     return trimmed
 
 
-def restore_untrimmed(claude_dir):
-    """Restore .untrimmed backups to their original names."""
+def archive_to_session_originals(claude_dir, project_filter=None):
+    """Append .untrimmed files (full originals) to session-originals/ archive.
+
+    Called after a successful push. The .untrimmed file is the full session
+    before trimming. Its content is appended to session-originals/ (growing
+    archive, no duplication). The .untrimmed file is NOT deleted here —
+    restore_untrimmed() handles moving it back to the project folder.
+    """
+    projects_dir = os.path.join(claude_dir, "projects")
+    backup_dir = os.path.join(claude_dir, "session-originals")
+    if not os.path.isdir(projects_dir):
+        return
+    archived = 0
+    for root, dirs, files in os.walk(projects_dir):
+        if project_filter and not _walk_matches_project(root, projects_dir, project_filter):
+            continue
+        for fname in files:
+            if not fname.endswith(".untrimmed"):
+                continue
+            untrimmed_path = os.path.join(root, fname)
+            # Map to session-originals path (strip .untrimmed suffix for the archive name)
+            original_name = fname.replace(".untrimmed", "")
+            rel = os.path.relpath(os.path.join(root, original_name), projects_dir)
+            archive_path = os.path.join(backup_dir, rel)
+            os.makedirs(os.path.dirname(archive_path), exist_ok=True)
+            try:
+                _append_to_backup(untrimmed_path, archive_path)
+                archived += 1
+                asize = os.path.getsize(archive_path) if os.path.exists(archive_path) else 0
+                usize = os.path.getsize(untrimmed_path)
+                print(f"  [ARCHIVE] {rel} ({usize // (1024*1024)} MB -> {asize // (1024*1024)} MB archive)")
+            except Exception as e:
+                print(f"  [ERROR] Could not archive {rel}: {e}")
+    if archived:
+        print(f"  [OK] Archived {archived} file(s) to session-originals/.")
+
+
+def restore_untrimmed(claude_dir, project_filter=None):
+    """Restore .untrimmed backups to their original names in project folder."""
     projects_dir = os.path.join(claude_dir, "projects")
     if not os.path.isdir(projects_dir):
         return
     restored = 0
     for root, dirs, files in os.walk(projects_dir):
+        if project_filter and not _walk_matches_project(root, projects_dir, project_filter):
+            continue
         for fname in files:
             if not fname.endswith(".untrimmed"):
                 continue
@@ -1781,6 +1825,7 @@ def push_sessions(claudecode_dir):
     r = git_run(claude_dir, "diff", "--cached", "--quiet")
     if r.returncode == 0:
         print("  No session changes to push.")
+        archive_to_session_originals(claude_dir)
         restore_untrimmed(claude_dir)
         return True
 
@@ -1815,7 +1860,8 @@ def push_sessions(claudecode_dir):
 
     print(f"  [OK] Sessions pushed as {next_tag}")
 
-    print("\n  Step 6: Restore originals...")
+    print("\n  Step 6: Archive + restore originals...")
+    archive_to_session_originals(claude_dir)
     restore_untrimmed(claude_dir)
     return True
 
@@ -1874,16 +1920,13 @@ def pull_sessions(claudecode_dir):
     print("\n  Step 8: Fix platform configs...")
     fix_platform_configs(claude_dir)
 
-    print("\n  Step 9: Restore large session history...")
-    restore_large_originals(claude_dir)
-
-    print("\n  Step 10: Clean up other-PC dirs...")
+    print("\n  Step 9: Clean up other-PC dirs...")
     cleanup_old_dirs(claude_dir, new_encoded, root_folder)
 
-    print("\n  Step 11: Fix timestamps (all files — reset replaces all)...")
+    print("\n  Step 10: Fix timestamps (all files — reset replaces all)...")
     fix_timestamps(claude_dir)
 
-    print("\n  Step 12: Sync project settings...")
+    print("\n  Step 11: Sync project settings...")
     import_project_settings(claude_dir, claudecode_dir)
 
     print("\n  [OK] Session sync complete.")
@@ -1948,7 +1991,7 @@ def push_project(claudecode_dir, project_remote):
     r = git_run(claude_dir, "diff", "--cached", "--quiet")
     if r.returncode == 0:
         print("  No session changes to push.")
-        restore_untrimmed(claude_dir)
+        restore_untrimmed(claude_dir, project_filter=project_folder)
         return True
 
     print("\n  Step 5: Commit and push...")
@@ -1962,18 +2005,19 @@ def push_project(claudecode_dir, project_remote):
         r2 = git_run(claude_dir, "pull", "--rebase", "origin", "main")
         if r2.returncode != 0:
             print("  [WARNING] Rebase failed. Try running root pull first.")
-            restore_untrimmed(claude_dir)
+            restore_untrimmed(claude_dir, project_filter=project_folder)
             return False
         r = git_run(claude_dir, "push", "origin", "main", "--tags")
         if r.returncode != 0:
             print(f"  [ERROR] Push failed:\n{r.stderr[-500:]}")
-            restore_untrimmed(claude_dir)
+            restore_untrimmed(claude_dir, project_filter=project_folder)
             return False
 
     print(f"  [OK] Sessions for {project_folder} pushed.")
 
-    print("\n  Step 6: Restore originals...")
-    restore_untrimmed(claude_dir)
+    print("\n  Step 6: Archive + restore originals...")
+    archive_to_session_originals(claude_dir, project_filter=project_folder)
+    restore_untrimmed(claude_dir, project_filter=project_folder)
     return True
 
 
@@ -2056,16 +2100,13 @@ def pull_project(claudecode_dir, project_remote):
     print("\n  Step 8: Fix platform configs...")
     fix_platform_configs(claude_dir)
 
-    print("\n  Step 9: Restore large session history...")
-    restore_large_originals(claude_dir)
-
-    print("\n  Step 10: Clean up other-PC dirs...")
+    print("\n  Step 9: Clean up other-PC dirs...")
     cleanup_old_dirs(claude_dir, new_encoded, root_folder)
 
-    print("\n  Step 11: Fix timestamps...")
+    print("\n  Step 10: Fix timestamps...")
     fix_timestamps(claude_dir, changed_files=changed_files)
 
-    print("\n  Step 12: Import project settings...")
+    print("\n  Step 11: Import project settings...")
     import_project_settings(claude_dir, claudecode_dir)
 
     print(f"\n  [OK] Session sync for {project_folder} complete.")

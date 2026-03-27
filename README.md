@@ -342,26 +342,27 @@ The root scripts (`push-all-sessions`, `pull-all-sessions`, etc.) are standalone
 
 ---
 
-## Pull Pipeline (12 Steps)
+## Pull Pipeline (11 Steps)
 
-Both `pull-all-sessions` and per-project `pull` run the same 12-step pipeline on **all** projects. The only difference is how conflicts are resolved (see "How Conflicts Are Resolved" below).
+Both `pull-all-sessions` and per-project `pull` run the same pipeline on **all** projects. The only difference is how conflicts are resolved (see "How Conflicts Are Resolved" below).
 
 When you pull, the engine automatically:
 
 ```
  1. Fix .gitignore           Enforce security rules on all machines
- 2. Backup large files       Save >90MB sessions before pull
- 3. Git pull                 Fetch latest from GitHub
+ 2. Backup large files       Append >90MB sessions to session-originals/ archive
+ 3. Git pull                 Fetch latest from GitHub (replaces local with remote)
  4. Materialize symlinks     Convert old symlinks to real directories
  5. Merge sessions           Copy new + replace outdated files from other machine
  6. Detect renamed projects  Match by git remote URL
  7. Fix cwd paths            Rewrite paths in ALL .jsonl (including subagents)
  8. Fix platform configs     Fix plugin installLocation/installPath for current OS
- 9. Restore large history    Append new content from backup to maintain full history
-10. Clean up other-PC dirs   Delete merged dirs, free disk space
-11. Fix timestamps           Set correct dates so claude --resume shows real times
-12. Import project settings  Apply MCP servers, allowedTools from other machine
+ 9. Clean up other-PC dirs   Delete merged dirs, free disk space
+10. Fix timestamps           Set correct dates so claude --resume shows real times
+11. Import project settings  Apply MCP servers, allowedTools from other machine
 ```
+
+After pull, local sessions are the remote's 90MB trimmed version. Full history lives in `session-originals/` (local-only, gitignored, grows on every push and pull).
 
 ## Push Pipeline (6 Steps)
 
@@ -373,7 +374,8 @@ When you pull, the engine automatically:
                               Repair artifacts (*.jsonl.backup-*, tool-results/) auto-excluded
  5. Push                      Per-project: regular push. Root: force push with tag
                               On failure: auto-rollback commit + delete tag (prevents orphaned tags)
- 6. Restore originals         Put untrimmed files back on disk
+ 6. Archive + restore         Append full originals to session-originals/ archive,
+                              then restore full files back to project folder
 ```
 
 ---
@@ -423,27 +425,29 @@ MCP servers and allowedTools configured per-project in `.claude.json` are synced
 
 ### Large File Handling
 
-Sessions over 90MB are trimmed to the last 90MB for push (GitHub can't handle huge files). The full file stays on the pushing machine's local disk.
+Sessions over 90MB are trimmed to the last 90MB for push (GitHub can't handle huge files). `session-originals/` is a local-only, gitignored, growing archive that preserves full session history.
 
-**On pull**, if the local session file is >90MB and is about to be replaced by a smaller remote version:
-1. The local file's content is **appended** to the backup in `session-originals/` (not replaced — the backup only grows)
-2. The local file is then replaced with the remote 90MB version
-3. You work with the 90MB version going forward
+**On push**, sessions >90MB are:
+1. Copied to `.untrimmed` backup, then trimmed to 90MB for GitHub
+2. After push succeeds, the full `.untrimmed` file is **appended** to `session-originals/` (growing archive, no duplication)
+3. The full file is restored back to the project folder (you keep working with it)
 
-**The backup is a growing history.** Each time you pull and the local file gets replaced, only the NEW lines from the local file are appended to the backup. No duplicates — it finds where the backup ends in the local file and only appends what's after that point. Over time, the backup accumulates the complete session history across all machines.
+**On pull**, sessions >90MB are:
+1. **Appended** to `session-originals/` before the pull replaces them
+2. Replaced with the remote's 90MB version (trimmed by the other machine)
+
+**The archive grows on both push and pull.** Each append operation finds the last line of the existing archive in the new content, and only appends lines after that point. No duplicates. If no overlap is found, all content is appended.
 
 **Example flow:**
 ```
-Windows: 300MB session → push → 90MB on remote, 300MB stays local
-Mac: pull 90MB → work → grows to 130MB → push → 90MB on remote
-Windows: pull → local 300MB backed up (session-originals/), replaced with 90MB
-Windows: work → grows to 150MB → push → 90MB on remote
-Mac: pull → 130MB appended to backup, replaced with 90MB
-Windows: pull → 150MB NEW lines appended to 300MB backup, replaced with 90MB
-         backup is now 300MB + new lines from 150MB = complete history
+Windows: 300MB session → push → archived to session-originals, 90MB on remote, 300MB stays local
+Mac: pull 90MB → work → grows to 130MB → push → 130MB archived, 90MB on remote, 130MB stays local
+Windows: pull → 300MB appended to session-originals, replaced with 90MB
+Windows: work → grows to 150MB → push → 150MB archived, 90MB on remote, 150MB stays local
+Mac: pull → 130MB appended to session-originals, replaced with 90MB
 ```
 
-If you ever need the full context, the backup file in `~/.claude/session-originals/` has everything.
+Each machine's `~/.claude/session-originals/` accumulates the complete session history from that machine's perspective.
 
 ---
 
